@@ -1,4 +1,3 @@
-
 ## Used to instal phyloseq
 #if (!require("BiocManager", quietly = TRUE))
 #  install.packages("BiocManager")
@@ -11,10 +10,10 @@ library(dplyr)
 library(magrittr)
 library(Hmisc)
 library(randomForest)
+library(ANCOMBC)
 library(microbiome)
 library(ape)
 library(ggpubr)
-library(ggfortify)
 
 # Read in phyloseq object
 psdata <- readRDS("./mb599data.Rds")
@@ -168,94 +167,6 @@ ggplot(pcoadf, aes(x = Axis.1, y = DXN, color = Participant.ID)) +
 
 
 
-########################### Random Forest Analysis ######################################
-
-
-
-#create data partition
-
-set.seed(1)
-index_train <- createDataPartition(psdata@sam_data$Group, p = 0.7)[[1]]
-train <- psdata@otu_table[index_train, ]
-test <- psdata@otu_table[-index_train, ]
-
-#spliting the phyloseq objects
-pstrain <- phyloseq(otu_table(train, taxa_are_rows = FALSE), psdata@sam_data[index_train, ])
-pstest <- phyloseq(otu_table(test, taxa_are_rows = FALSE), psdata@sam_data[-index_train, ])
-
-
-
-
-#Find optimum mtry
-
-set.seed(1)
-datatrain = data.frame(train)
-datatrain$sample_group = pstrain@sam_data$Group
-control <- trainControl(method='repeatedcv', 
-                        number=3, 
-                        repeats=3,
-                        allowParallel = F)
-
-tunegrid <- expand.grid(.mtry=c(1:20)) 
-rf <- train(sample_group ~., 
-            data= datatrain, 
-            method='rf', 
-            metric='Accuracy', 
-            tuneGrid=tunegrid, 
-            trControl=control)
-print(rf)
-
-
-
-#Testing model performance                               
-}
-mtry_best = as.numeric(rf$bestTune)
-model = randomForest(train, y = as.factor(pstrain@sam_data$Group), mtry = mtry_best)
-
-model 
-
-
-#Performance on test set                              
-
-preds = predict(model, test)
-print(paste("Accuracy: ", sum(preds == as.factor(pstest@sam_data$Group)) / nsamples(pstest)))
-
-#Visualize on test dataset
-ord <- ordinate(pstest, method = "PCoA", distance = 'euclidean')
-pstest@sam_data$rf_predictions = predict(model, pstest@otu_table)
-plot_ordination(pstest, ord, 'samples', color = 'Group', shape = 'rf_predictions') + geom_point(size = 4) +
-  ggtitle("Microbiome classification between groups based on random forest algoritm")
-
-
-
-#obtain the important taxa
-
-par(mfrow=c(1,2))
-model = randomForest(pstest@otu_table, y = as.factor(pstest@sam_data$Group), mtry = mtry_best)
-varImpPlot(model, type = 2)
-model = randomForest(pstest@otu_table, y = as.factor(pstest@sam_data$DXN), mtry = mtry_best)
-varImpPlot(model, type = 2)
-
-
-
-
-#Important variables
-
-imp_list <- list()
-for(i in 1:20){
-  model = randomForest(pstest@otu_table, y = as.factor(pstest@sam_data$Group), mtry = mtry_best)
-  imp_list[i] <- varImp(model)
-}
-
-imp_df <- do.call(rbind.data.frame, imp_list)
-colnames(imp_df) <- colnames(train)
-colMeans(imp_df)
-barplot(sort(colMeans(imp_df)), horiz = T, las = 1, xlab = "Mean variable taxa")          
-                               
-
-
-
-
 
 ########################## Correlation Analysis #########################################
 
@@ -394,153 +305,6 @@ f2 <- ggplot(cyb_alt, aes(x = family, y = metab, fill = rho)) +
 
 
 
-############################# PCoA Analysis ###################################
-
-
-
-
-# PCoA analysis
-
-
-
-# Extract relevant sub-data
-pswk1 <- ps %>% subset_samples(Week == '1')
-pswk2 <- ps %>% subset_samples(Week == '2')
-pswk3 <- ps %>% subset_samples(Week == '3')
-pswk3C <- pswk3 %>% subset_samples(Group == 'control')
-pswk3T <- pswk3 %>% subset_samples(Group == 'treatment')
-pswk4 <- ps %>% subset_samples(Week == '4')
-pswk5 <- ps %>% subset_samples(Week == '5')
-
-# Calculate eigenvalues by Bray Curtis distances
-ord1 <- ordinate(pswk1, method = 'PCoA', distance = 'bray')
-ord2 <- ordinate(pswk2, method = 'PCoA', distance = 'bray')
-ord3 <- ordinate(pswk3, method = 'PCoA', distance = 'bray')
-ord3C <- ordinate(pswk3C, method = 'PCoA', distance = 'bray')
-ord3T <- ordinate(pswk3T, method = 'PCoA', distance = 'bray')
-ord4 <- ordinate(pswk4, method = 'PCoA', distance = 'bray')
-ord5 <- ordinate(pswk5, method = 'PCoA', distance = 'bray')
-
-# Plot PCoA
-pcoawk1 <- plot_ordination(pswk1, ord1, color = 'Group') +
-  geom_point(aes(),
-             size = 3) +
-  ggtitle('Beta Diversity of Fecal Samples in Week 0')
-
-pcoawk2 <- plot_ordination(pswk2, ord2, color = 'Group') +
-  geom_point(aes(),
-             size = 3) +
-  ggtitle('Beta Diversity of Fecal Samples in Week 2')
-
-pcoawk3 <- plot_ordination(pswk3, ord3, color = 'Group') +
-  geom_point(aes(),
-             size = 3) +
-  ggtitle('Beta Diversity of Fecal Samples in Week 4')
-
-pcoawk3C <- plot_ordination(pswk3C, ord3C, color = 'Group') +
-  geom_point(aes(),
-             size = 3) +
-  ggtitle('Beta Diversity of Fecal Samples in Week 4, Control Subsample')
-
-pcoawk3T <- plot_ordination(pswk3T, ord3T, color = 'Group') +
-  geom_point(aes(),
-             size = 3) +
-  ggtitle('Beta Diversity of Fecal Samples in Week 4, Treatment Subsample')
-
-pcoawk4 <- plot_ordination(pswk4, ord4, color = 'Group') +
-  geom_point(aes(),
-             size = 3) +
-  ggtitle('Beta Diversity of Fecal Samples in Week 6')
-
-pcoawk5 <- plot_ordination(pswk5, ord5, color = 'Group') +
-  geom_point(aes(),
-             size = 3) +
-  ggtitle('Beta Diversity of Fecal Samples in Week 8')
-
-# Comparison of the components of the top two axes across the 5 measurements
-ordTop = cbind(ord1$vectors[,1],ord2$vectors[,1],ord3$vectors[,1],ord4$vectors[,1],ord5$vectors[,1])
-colnames(ordTop) = c("Week 1", "Week 2", "Week 3", "Week 4", "Week 5")
-
-barplot(t(ordTop),
-        main="Differences in the Components of the Axis with First Largest Eigenvalue",
-        legend=colnames(ordTop),
-        beside=TRUE,
-        las=2)
-
-ordSecond = cbind(ord1$vectors[,2],ord2$vectors[,2],ord3$vectors[,2],ord4$vectors[,2],ord5$vectors[,2])
-colnames(ordSecond) = c("Week 1", "Week 2", "Week 3", "Week 4", "Week 5")
-
-barplot(t(ordSecond),
-        main="Differences in the Components of the Axis with Second Largest Eigenvalue",
-        legend=colnames(ordSecond),
-        beside=TRUE,
-        las=2,
-        args.legend = list(x = 'bottomright'))
-
-# Comparison of the components of the largest eigenvalue of the two separated groups of control and treatment in week 3
-
-# Work In Progress
-# ord3TopCT = cbind(ord3C$vectors[,1],ord3T$vectors[,1])
-# colnames(ord3TopCT) = c("Control", "Treatment")
-# 
-# barplot(t(ord3TopCT),
-#         main="Control vs Treatment PCoA, Vector with the Largest Eigenvalue, Week 3",
-#         legend=colnames(ord3TopCT),
-#         beside=TRUE,
-#         las=2,
-#         args.legend = list(x = 'bottomright'))
-
-
-
-
-
-
-
-
-
-############################# PCA Analysis ###################################
-
-
-# PCA analysis
-
-
-# Extract relevant sub-data (need data generated in PCoA)
-matrixwk1 <- cbind(sample_data(pswk1)[,7],otu_table(pswk1))
-matrixwk2 <- cbind(sample_data(pswk2)[,7],otu_table(pswk2))
-matrixwk3 <- cbind(sample_data(pswk3)[,7],otu_table(pswk3))
-matrixwk4 <- cbind(sample_data(pswk4)[,7],otu_table(pswk4))
-matrixwk5 <- cbind(sample_data(pswk5)[,7],otu_table(pswk5))
-
-
-# Calculate eigenvectors in respect to ASV's and X6PN
-pcawk1 <- prcomp(matrixwk1,scale = TRUE)
-pcawk2 <- prcomp(matrixwk2,scale = TRUE)
-pcawk3 <- prcomp(matrixwk3,scale = TRUE)
-pcawk4 <- prcomp(matrixwk4,scale = TRUE)
-pcawk5 <- prcomp(matrixwk5,scale = TRUE)
-
-
-# Calculate variance captured by each eigenvector
-var1=pcawk1$sdev^2/sum(pcawk1$sdev^2)
-var2=pcawk2$sdev^2/sum(pcawk2$sdev^2)
-var3=pcawk3$sdev^2/sum(pcawk3$sdev^2)
-var4=pcawk4$sdev^2/sum(pcawk4$sdev^2)
-var5=pcawk5$sdev^2/sum(pcawk5$sdev^2)
-
-# Plotting variance drop-off for each week (none are that good)
-qplot(c(1:27), var1)
-qplot(c(1:27), var2)
-qplot(c(1:27), var3)
-qplot(c(1:27), var4)
-qplot(c(1:27), var5)
-
-# Plotting top two eigenvector axes with data on control vs treatment
-# (maybe other axes would be able to separate these two groups more?)
-autoplot(pcawk1,data=sample_data(pswk1), colour = "Group")
-autoplot(pcawk2,data=sample_data(pswk1), colour = "Group")
-autoplot(pcawk3,data=sample_data(pswk1), colour = "Group")
-autoplot(pcawk4,data=sample_data(pswk1), colour = "Group")
-autoplot(pcawk5,data=sample_data(pswk1), colour = "Group")
 
 
 
@@ -894,7 +658,3 @@ f4 <- ggplot(newfam, aes(x = wkc, y = conc, color = Participant)) +
   labs(y = 'Concentration (µg/g dry wt)',
        x = 'Weeks') +
   ggtitle('Metabolite Concentration by Week')
-
-
-
-
